@@ -1,22 +1,49 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Category, Expense } from './types';
-import { loadCategories, loadExpenses, saveCategories, saveExpenses } from './lib/storage';
+import type { Category, Expense, SavingsGoal } from './types';
+import {
+  isOnboarded,
+  loadCategories,
+  loadCurrency,
+  loadExpenses,
+  loadLastNotifiedDate,
+  loadNotificationsEnabled,
+  loadSavingsGoals,
+  loadThemePreference,
+  markOnboarded,
+  saveCategories,
+  saveCurrency,
+  saveExpenses,
+  saveLastNotifiedDate,
+  saveNotificationsEnabled,
+  saveSavingsGoals,
+  saveThemePreference,
+  type ThemePreference,
+} from './lib/storage';
+import { CURRENCIES } from './data/currencies';
+import { fetchExchangeRate } from './lib/exchangeRate';
+import { formatAmount } from './lib/format';
 import {
   currentMonthStart,
   isCurrentRealMonth,
   isInMonth,
   nextMonth,
   previousMonth,
+  statusForDate,
   todayISO,
   toISODate,
+  tomorrowISO,
 } from './lib/date';
-import { buildExpensesCsv, downloadCsv } from './lib/csv';
 import { MonthNavigator } from './components/MonthNavigator';
 import { ExpenseForm } from './components/ExpenseForm';
 import { ExpenseList } from './components/ExpenseList';
 import { MonthSummary } from './components/MonthSummary';
+import { ExpenseTrendChart } from './components/ExpenseTrendChart';
+import { CategoryBudgets } from './components/CategoryBudgets';
+import { SavingsGoals } from './components/SavingsGoals';
+import { AnnualView } from './components/AnnualView';
 import { CategoryManager } from './components/CategoryManager';
 import { RecurringDeleteDialog } from './components/RecurringDeleteDialog';
+import { WelcomeBanner } from './components/WelcomeBanner';
 import './App.css';
 
 export default function App() {
@@ -26,28 +53,130 @@ export default function App() {
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Expense | null>(null);
+  const [theme, setTheme] = useState<ThemePreference>(loadThemePreference);
+  const [currency, setCurrency] = useState<string>(loadCurrency);
+  const [isConvertingCurrency, setIsConvertingCurrency] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [savingsGoals, setSavingsGoals] = useState<SavingsGoal[]>(loadSavingsGoals);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showAnnualView, setShowAnnualView] = useState(false);
+  const [hasSeenOnboarding, setHasSeenOnboarding] = useState(isOnboarded);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(loadNotificationsEnabled);
 
   useEffect(() => saveExpenses(expenses), [expenses]);
   useEffect(() => saveCategories(categories), [categories]);
+  useEffect(() => saveCurrency(currency), [currency]);
+  useEffect(() => saveSavingsGoals(savingsGoals), [savingsGoals]);
+  useEffect(() => saveNotificationsEnabled(notificationsEnabled), [notificationsEnabled]);
+
+  useEffect(() => {
+    if (expenses.length > 0 && !hasSeenOnboarding) {
+      setHasSeenOnboarding(true);
+      markOnboarded();
+    }
+  }, [expenses.length, hasSeenOnboarding]);
+
+  useEffect(() => {
+    if (!notificationsEnabled || typeof Notification === 'undefined' || Notification.permission !== 'granted') {
+      return;
+    }
+    const today = todayISO();
+    if (loadLastNotifiedDate() === today) return;
+    const tomorrow = tomorrowISO();
+    const dueSoon = expenses.filter((e) => e.status === 'prevu' && (e.date === today || e.date === tomorrow));
+    if (dueSoon.length === 0) return;
+    const total = dueSoon.reduce((sum, e) => sum + e.amount, 0);
+    new Notification('Dépenses prévues bientôt', {
+      body: `${dueSoon.length} opération(s) prévue(s) pour un total de ${formatAmount(total, currency)}.`,
+      icon: '/icon-192.png',
+    });
+    saveLastNotifiedDate(today);
+  }, [notificationsEnabled, expenses, currency]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'n' && event.key !== 'N') return;
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return;
+      if (showCategoryManager || showAnnualView || pendingDelete) return;
+      event.preventDefault();
+      document.getElementById('expense-amount-input')?.focus();
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [showCategoryManager, showAnnualView, pendingDelete]);
+
+  useEffect(() => {
+    saveThemePreference(theme);
+    if (theme === 'system') {
+      delete document.documentElement.dataset.theme;
+    } else {
+      document.documentElement.dataset.theme = theme;
+    }
+  }, [theme]);
+
+  useEffect(() => {
+    function promoteDuePlanned() {
+      setExpenses((prev) => {
+        const today = todayISO();
+        let changed = false;
+        const next = prev.map((e) => {
+          if (e.status === 'prevu' && e.date <= today) {
+            changed = true;
+            return { ...e, status: 'reel' as const };
+          }
+          return e;
+        });
+        return changed ? next : prev;
+      });
+    }
+
+    promoteDuePlanned();
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') promoteDuePlanned();
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
 
   const monthExpenses = useMemo(
     () => expenses.filter((e) => isInMonth(e.date, currentMonth)),
     [expenses, currentMonth],
   );
 
+  const soldeActuel = useMemo(() => {
+    const realized = monthExpenses.filter((e) => e.status === 'reel');
+    const revenus = realized.filter((e) => e.type === 'revenu').reduce((sum, e) => sum + e.amount, 0);
+    const depenses = realized.filter((e) => e.type === 'depense').reduce((sum, e) => sum + e.amount, 0);
+    return revenus - depenses;
+  }, [monthExpenses]);
+
+  const searchedMonthExpenses = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return monthExpenses;
+    const categoryById = new Map(categories.map((c) => [c.id, c]));
+    return monthExpenses.filter((e) => {
+      const categoryName = categoryById.get(e.categoryId)?.name ?? '';
+      return (
+        e.description.toLowerCase().includes(query) || categoryName.toLowerCase().includes(query)
+      );
+    });
+  }, [monthExpenses, searchQuery, categories]);
+
   const realizedExpenses = useMemo(
     () =>
-      monthExpenses
+      searchedMonthExpenses
         .filter((e) => e.status === 'reel')
         .sort((a, b) => b.date.localeCompare(a.date)),
-    [monthExpenses],
+    [searchedMonthExpenses],
   );
   const plannedExpenses = useMemo(
     () =>
-      monthExpenses
+      searchedMonthExpenses
         .filter((e) => e.status === 'prevu')
         .sort((a, b) => a.date.localeCompare(b.date)),
-    [monthExpenses],
+    [searchedMonthExpenses],
   );
 
   const usedCategoryIds = useMemo(() => new Set(expenses.map((e) => e.categoryId)), [expenses]);
@@ -66,6 +195,22 @@ export default function App() {
       return next;
     });
     setEditingExpense(null);
+  }
+
+  function handleDuplicate(expense: Expense) {
+    const date = todayISO();
+    setExpenses((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        date,
+        amount: expense.amount,
+        categoryId: expense.categoryId,
+        description: expense.description,
+        status: statusForDate(date),
+        type: expense.type,
+      },
+    ]);
   }
 
   function handleRequestDelete(expense: Expense) {
@@ -107,29 +252,229 @@ export default function App() {
     setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, color } : c)));
   }
 
+  function handleSetCategoryBudget(id: string, budget: number | undefined) {
+    setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, budget } : c)));
+  }
+
   function handleDeleteCategory(id: string) {
     if (usedCategoryIds.has(id)) return;
+    const category = categories.find((c) => c.id === id);
+    if (!window.confirm(`Supprimer la catégorie « ${category?.name ?? ''} » ?`)) return;
     setCategories((prev) => prev.filter((c) => c.id !== id));
   }
 
-  function handleExportCsv() {
-    const csv = buildExpensesCsv(expenses, categories);
-    downloadCsv(`suivi-budget-${toISODate(new Date())}.csv`, csv);
+  function handleAddSavingsGoal(goal: SavingsGoal) {
+    setSavingsGoals((prev) => [...prev, goal]);
   }
+
+  function handleUpdateSavingsGoalSaved(id: string, savedAmount: number) {
+    setSavingsGoals((prev) => prev.map((g) => (g.id === id ? { ...g, savedAmount } : g)));
+  }
+
+  function handleDeleteSavingsGoal(id: string) {
+    setSavingsGoals((prev) => prev.filter((g) => g.id !== id));
+  }
+
+  async function handleExportExcel() {
+    setIsExporting(true);
+    try {
+      const [{ buildExpensesWorkbook, downloadWorkbook }, { captureElementAsPng }] = await Promise.all([
+        import('./lib/excelExport'),
+        import('./lib/captureElement'),
+      ]);
+      const categoryChartElement = document.getElementById('category-chart-capture');
+      const trendChartElement = document.getElementById('trend-chart-capture');
+      const [categoryChartImage, trendChartImage] = await Promise.all([
+        categoryChartElement ? captureElementAsPng(categoryChartElement) : null,
+        trendChartElement ? captureElementAsPng(trendChartElement) : null,
+      ]);
+      const workbook = await buildExpensesWorkbook(expenses, categories, currency, [
+        categoryChartImage,
+        trendChartImage,
+      ]);
+      await downloadWorkbook(`suivi-budget-${toISODate(new Date())}.xlsx`, workbook);
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
+  async function handleChangeCurrency(nextCurrency: string) {
+    if (nextCurrency === currency || !nextCurrency) return;
+
+    if (expenses.length === 0) {
+      setCurrency(nextCurrency);
+      return;
+    }
+
+    setIsConvertingCurrency(true);
+    try {
+      const rate = await fetchExchangeRate(currency, nextCurrency);
+      setExpenses((prev) =>
+        prev.map((e) => ({ ...e, amount: Math.round(e.amount * rate * 100) / 100 })),
+      );
+      setCurrency(nextCurrency);
+    } catch {
+      window.alert(
+        "Impossible de récupérer le taux de change automatiquement (vérifiez votre connexion internet). La devise n'a pas été changée.",
+      );
+    } finally {
+      setIsConvertingCurrency(false);
+    }
+  }
+
+  function handleDismissWelcome() {
+    setHasSeenOnboarding(true);
+    markOnboarded();
+  }
+
+  function handleLoadSampleData() {
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const dateFor = (day: number) => toISODate(new Date(year, month, day));
+    const sample: Expense[] = [
+      {
+        id: crypto.randomUUID(),
+        date: dateFor(1),
+        amount: 2200,
+        categoryId: 'salaire',
+        description: 'Salaire',
+        status: statusForDate(dateFor(1)),
+        type: 'revenu',
+      },
+      {
+        id: crypto.randomUUID(),
+        date: dateFor(5),
+        amount: 750,
+        categoryId: 'logement',
+        description: 'Loyer',
+        status: statusForDate(dateFor(5)),
+        type: 'depense',
+      },
+      {
+        id: crypto.randomUUID(),
+        date: dateFor(12),
+        amount: 180,
+        categoryId: 'alimentation',
+        description: 'Courses',
+        status: statusForDate(dateFor(12)),
+        type: 'depense',
+      },
+      {
+        id: crypto.randomUUID(),
+        date: dateFor(18),
+        amount: 15,
+        categoryId: 'loisirs',
+        description: 'Abonnement streaming',
+        status: statusForDate(dateFor(18)),
+        type: 'depense',
+      },
+      {
+        id: crypto.randomUUID(),
+        date: dateFor(27),
+        amount: 60,
+        categoryId: 'transport',
+        description: 'Assurance auto',
+        status: statusForDate(dateFor(27)),
+        type: 'depense',
+      },
+    ];
+    setExpenses((prev) => [...prev, ...sample]);
+    setHasSeenOnboarding(true);
+    markOnboarded();
+  }
+
+  async function handleToggleNotifications() {
+    if (!notificationsEnabled) {
+      if (typeof Notification === 'undefined') {
+        window.alert('Les notifications ne sont pas prises en charge par ce navigateur.');
+        return;
+      }
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        window.alert("Autorisation refusée. Vous pouvez l'activer depuis les réglages du navigateur.");
+        return;
+      }
+    }
+    setNotificationsEnabled((v) => !v);
+  }
+
+  function cycleTheme() {
+    setTheme((current) =>
+      current === 'system' ? 'light' : current === 'light' ? 'dark' : 'system',
+    );
+  }
+
+  const themeIcon = theme === 'system' ? '🖥️' : theme === 'light' ? '☀️' : '🌙';
+  const themeLabel =
+    theme === 'system' ? 'Thème : Système' : theme === 'light' ? 'Thème : Clair' : 'Thème : Sombre';
 
   return (
     <div className="app">
       <header className="app__header">
         <h1>💶 Suivi de Budget</h1>
         <div className="app__header-actions">
-          <button type="button" className="btn" onClick={handleExportCsv} disabled={expenses.length === 0}>
-            📤 Exporter CSV
+          <button
+            type="button"
+            className="btn"
+            onClick={handleExportExcel}
+            disabled={expenses.length === 0 || isExporting}
+          >
+            {isExporting ? '⏳ Export…' : '📤 Exporter Excel'}
           </button>
           <button type="button" className="btn" onClick={() => setShowCategoryManager(true)}>
             🏷️ Catégories
           </button>
+          <button type="button" className="btn" onClick={() => setShowAnnualView(true)}>
+            📅 Vue annuelle
+          </button>
+          <details className="settings-menu">
+            <summary className="btn settings-menu__trigger" aria-label="Paramètres">
+              ⚙️
+            </summary>
+            <div className="settings-menu__panel">
+              <label className="settings-menu__row">
+                <span>Devise</span>
+                <select
+                  className="currency-select"
+                  value={currency}
+                  onChange={(e) => handleChangeCurrency(e.target.value)}
+                  disabled={isConvertingCurrency}
+                  aria-label="Devise"
+                >
+                  {CURRENCIES.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+                {isConvertingCurrency && (
+                  <span className="currency-select__spinner" aria-live="polite">
+                    ⏳
+                  </span>
+                )}
+              </label>
+              <button type="button" className="settings-menu__row settings-menu__row--button" onClick={cycleTheme}>
+                <span>Thème</span>
+                <span>
+                  {themeIcon} {themeLabel.replace('Thème : ', '')}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="settings-menu__row settings-menu__row--button"
+                onClick={handleToggleNotifications}
+              >
+                <span>🔔 Rappels de dépenses prévues</span>
+                <span>{notificationsEnabled ? 'Activés' : 'Désactivés'}</span>
+              </button>
+            </div>
+          </details>
         </div>
       </header>
+
+      {expenses.length === 0 && !hasSeenOnboarding && (
+        <WelcomeBanner onLoadSample={handleLoadSampleData} onDismiss={handleDismissWelcome} />
+      )}
 
       <MonthNavigator
         month={currentMonth}
@@ -137,6 +482,18 @@ export default function App() {
         onNext={() => setCurrentMonth((m) => nextMonth(m))}
         onToday={() => setCurrentMonth(currentMonthStart())}
       />
+
+      <div className="hero-balance">
+        <span className="hero-balance__label">
+          {soldeActuel >= 0 ? 'Il vous reste ce mois-ci' : 'Vous êtes en déficit ce mois-ci'}
+        </span>
+        <span
+          className="hero-balance__value"
+          style={{ color: soldeActuel < 0 ? 'var(--danger)' : 'var(--good)' }}
+        >
+          {formatAmount(soldeActuel, currency)}
+        </span>
+      </div>
 
       <main className="app__layout">
         <section className="app__column">
@@ -149,31 +506,75 @@ export default function App() {
               onCancelEdit={() => setEditingExpense(null)}
             />
           </div>
-          <div className="panel">
-            <ExpenseList
-              title="Dépenses réalisées"
-              expenses={realizedExpenses}
-              categories={categories}
-              emptyLabel="Aucune dépense réalisée ce mois-ci."
-              onEdit={setEditingExpense}
-              onDelete={handleRequestDelete}
+          <div className="panel panel--search">
+            <input
+              type="search"
+              className="search-input"
+              placeholder="🔍 Rechercher une opération ou une catégorie…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              aria-label="Rechercher"
             />
           </div>
           <div className="panel">
             <ExpenseList
-              title="Dépenses prévues"
-              expenses={plannedExpenses}
+              title="Réalisées"
+              expenses={realizedExpenses}
               categories={categories}
-              emptyLabel="Aucune dépense prévue ce mois-ci."
+              emptyLabel={
+                searchQuery
+                  ? 'Aucune opération réalisée ne correspond à la recherche.'
+                  : 'Aucune opération réalisée ce mois-ci.'
+              }
               onEdit={setEditingExpense}
               onDelete={handleRequestDelete}
+              onDuplicate={handleDuplicate}
+              currency={currency}
+            />
+          </div>
+          <div className="panel">
+            <ExpenseList
+              title="Prévues"
+              expenses={plannedExpenses}
+              categories={categories}
+              emptyLabel={
+                searchQuery
+                  ? 'Aucune opération prévue ne correspond à la recherche.'
+                  : 'Aucune opération prévue ce mois-ci.'
+              }
+              onEdit={setEditingExpense}
+              onDelete={handleRequestDelete}
+              onDuplicate={handleDuplicate}
+              currency={currency}
+            />
+          </div>
+          <div className="panel">
+            <h3 className="panel-title">🎯 Objectifs d'épargne</h3>
+            <SavingsGoals
+              goals={savingsGoals}
+              currency={currency}
+              onAdd={handleAddSavingsGoal}
+              onUpdateSaved={handleUpdateSavingsGoalSaved}
+              onDelete={handleDeleteSavingsGoal}
             />
           </div>
         </section>
 
-        <section className="app__column">
+        <section className="app__column app__column--summary">
           <div className="panel">
-            <MonthSummary expenses={monthExpenses} categories={categories} />
+            <MonthSummary expenses={monthExpenses} categories={categories} currency={currency} />
+          </div>
+          <div className="panel">
+            <h3 className="panel-title">💳 Budgets par catégorie</h3>
+            <CategoryBudgets
+              expenses={monthExpenses}
+              categories={categories}
+              currency={currency}
+              onSetBudget={handleSetCategoryBudget}
+            />
+          </div>
+          <div className="panel">
+            <ExpenseTrendChart expenses={expenses} currentMonth={currentMonth} currency={currency} />
           </div>
         </section>
       </main>
@@ -185,9 +586,14 @@ export default function App() {
           onAdd={handleAddCategory}
           onRename={handleRenameCategory}
           onRecolor={handleRecolorCategory}
+          onSetBudget={handleSetCategoryBudget}
           onDelete={handleDeleteCategory}
           onClose={() => setShowCategoryManager(false)}
         />
+      )}
+
+      {showAnnualView && (
+        <AnnualView expenses={expenses} currency={currency} onClose={() => setShowAnnualView(false)} />
       )}
 
       {pendingDelete && (
@@ -197,6 +603,10 @@ export default function App() {
           onCancel={() => setPendingDelete(null)}
         />
       )}
+
+      <footer className="app__footer">
+        🔒 Vos données restent uniquement sur cet appareil — rien n'est envoyé à un serveur.
+      </footer>
     </div>
   );
 }

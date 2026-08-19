@@ -7,6 +7,10 @@ const DEFAULT_ICONS: Record<string, string> = {
   abonnements: '🔁',
   shopping: '🛍️',
   autres: '📦',
+  salaire: '💼',
+  freelance: '💻',
+  remboursements: '💳',
+  'autres-revenus': '➕',
 };
 
 const FALLBACK_ICON = '🏷️';

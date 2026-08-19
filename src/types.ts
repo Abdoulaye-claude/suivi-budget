@@ -1,9 +1,12 @@
 export type ExpenseStatus = 'reel' | 'prevu';
+export type ExpenseType = 'depense' | 'revenu';
 
 export interface Category {
   id: string;
   name: string;
   color: string;
+  kind: ExpenseType;
+  budget?: number;
 }
 
 export interface Expense {
@@ -13,5 +16,13 @@ export interface Expense {
   categoryId: string;
   description: string;
   status: ExpenseStatus;
+  type: ExpenseType;
   recurrenceId?: string;
+}
+
+export interface SavingsGoal {
+  id: string;
+  name: string;
+  targetAmount: number;
+  savedAmount: number;
 }

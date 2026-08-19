@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { Category, Expense, ExpenseStatus } from '../types';
-import { addMonthsIso, todayISO } from '../lib/date';
+import type { Category, Expense, ExpenseStatus, ExpenseType } from '../types';
+import { addMonthsIso, statusForDate } from '../lib/date';
 
 interface Props {
   categories: Category[];
@@ -13,10 +13,6 @@ interface Props {
 const MIN_OCCURRENCES = 2;
 const MAX_OCCURRENCES = 36;
 
-function statusForDate(iso: string): ExpenseStatus {
-  return iso > todayISO() ? 'prevu' : 'reel';
-}
-
 export function ExpenseForm({
   categories,
   defaultDate,
@@ -26,16 +22,23 @@ export function ExpenseForm({
 }: Props) {
   const [date, setDate] = useState(defaultDate);
   const [amount, setAmount] = useState('');
-  const [categoryId, setCategoryId] = useState(categories[0]?.id ?? '');
+  const [type, setType] = useState<ExpenseType>('depense');
+  const [categoryId, setCategoryId] = useState(
+    () => categories.find((c) => c.kind === 'depense')?.id ?? '',
+  );
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState<ExpenseStatus>(statusForDate(defaultDate));
   const [isRecurring, setIsRecurring] = useState(false);
   const [occurrences, setOccurrences] = useState(6);
+  const [error, setError] = useState<string | null>(null);
+
+  const availableCategories = categories.filter((c) => c.kind === type);
 
   useEffect(() => {
     if (editingExpense) {
       setDate(editingExpense.date);
       setAmount(String(editingExpense.amount));
+      setType(editingExpense.type);
       setCategoryId(editingExpense.categoryId);
       setDescription(editingExpense.description);
       setStatus(editingExpense.status);
@@ -43,13 +46,23 @@ export function ExpenseForm({
     } else {
       setDate(defaultDate);
       setAmount('');
-      setCategoryId((current) => current || categories[0]?.id || '');
       setDescription('');
       setStatus(statusForDate(defaultDate));
       setIsRecurring(false);
     }
+    setError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingExpense, defaultDate]);
+
+  function handleTypeChange(nextType: ExpenseType) {
+    setType(nextType);
+    setCategoryId((current) => {
+      if (current && categories.some((c) => c.id === current && c.kind === nextType)) {
+        return current;
+      }
+      return categories.find((c) => c.kind === nextType)?.id ?? '';
+    });
+  }
 
   function handleDateChange(nextDate: string) {
     setDate(nextDate);
@@ -58,10 +71,25 @@ export function ExpenseForm({
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-    const numericAmount = Number.parseFloat(amount.replace(',', '.'));
-    if (!date || !categoryId || !Number.isFinite(numericAmount) || numericAmount <= 0) {
+
+    if (!date) {
+      setError('La date est requise.');
       return;
     }
+    if (!categoryId) {
+      setError('Sélectionne une catégorie.');
+      return;
+    }
+    const numericAmount = Number.parseFloat(amount.replace(',', '.'));
+    if (!amount.trim() || !Number.isFinite(numericAmount)) {
+      setError('Le montant doit être un nombre valide.');
+      return;
+    }
+    if (numericAmount <= 0) {
+      setError('Le montant doit être supérieur à 0.');
+      return;
+    }
+    setError(null);
 
     if (!editingExpense && isRecurring && occurrences >= MIN_OCCURRENCES) {
       const recurrenceId = crypto.randomUUID();
@@ -74,6 +102,7 @@ export function ExpenseForm({
           categoryId,
           description: description.trim(),
           status: statusForDate(occurrenceDate),
+          type,
           recurrenceId,
         };
       });
@@ -87,6 +116,7 @@ export function ExpenseForm({
           categoryId,
           description: description.trim(),
           status,
+          type,
           recurrenceId: editingExpense?.recurrenceId,
         },
       ]);
@@ -102,8 +132,37 @@ export function ExpenseForm({
   return (
     <form className="expense-form" onSubmit={handleSubmit}>
       <h3 className="panel-title">
-        {editingExpense ? 'Modifier la dépense' : 'Ajouter une dépense'}
+        {editingExpense
+          ? type === 'revenu'
+            ? 'Modifier le revenu'
+            : 'Modifier la dépense'
+          : type === 'revenu'
+            ? 'Ajouter un revenu'
+            : 'Ajouter une dépense'}
+        {!editingExpense && <span className="panel-title__hint" title="Raccourci clavier">N</span>}
       </h3>
+
+      <div className="field">
+        <span>Type</span>
+        <div className="segmented" role="radiogroup" aria-label="Type de mouvement">
+          <button
+            type="button"
+            className={type === 'depense' ? 'segmented__option is-active' : 'segmented__option'}
+            onClick={() => handleTypeChange('depense')}
+            aria-pressed={type === 'depense'}
+          >
+            💸 Dépense
+          </button>
+          <button
+            type="button"
+            className={type === 'revenu' ? 'segmented__option is-active' : 'segmented__option'}
+            onClick={() => handleTypeChange('revenu')}
+            aria-pressed={type === 'revenu'}
+          >
+            💰 Revenu
+          </button>
+        </div>
+      </div>
 
       <div className="field-row">
         <label className="field">
@@ -118,6 +177,7 @@ export function ExpenseForm({
         <label className="field">
           <span>Montant</span>
           <input
+            id="expense-amount-input"
             type="text"
             inputMode="decimal"
             placeholder="0,00"
@@ -132,7 +192,8 @@ export function ExpenseForm({
         <label className="field">
           <span>Catégorie</span>
           <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-            {categories.map((cat) => (
+            {availableCategories.length === 0 && <option value="">Aucune catégorie</option>}
+            {availableCategories.map((cat) => (
               <option key={cat.id} value={cat.id}>
                 {cat.name}
               </option>
@@ -199,6 +260,12 @@ export function ExpenseForm({
             </label>
           )}
         </div>
+      )}
+
+      {error && (
+        <p className="form-error" role="alert">
+          ⚠️ {error}
+        </p>
       )}
 
       <div className="form-actions">
