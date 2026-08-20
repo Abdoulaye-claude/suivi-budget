@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Category, Expense, SavingsGoal } from './types';
 import {
   isOnboarded,
@@ -20,6 +20,7 @@ import {
   type ThemePreference,
 } from './lib/storage';
 import { CURRENCIES } from './data/currencies';
+import { DEFAULT_CATEGORIES } from './data/defaultCategories';
 import { fetchExchangeRate } from './lib/exchangeRate';
 import { formatAmount } from './lib/format';
 import {
@@ -44,6 +45,9 @@ import { AnnualView } from './components/AnnualView';
 import { CategoryManager } from './components/CategoryManager';
 import { RecurringDeleteDialog } from './components/RecurringDeleteDialog';
 import { WelcomeBanner } from './components/WelcomeBanner';
+import { AuthModal } from './components/AuthModal';
+import { isSupabaseConfigured, supabase } from './lib/supabaseClient';
+import type { Session } from '@supabase/supabase-js';
 import './App.css';
 
 export default function App() {
@@ -62,6 +66,22 @@ export default function App() {
   const [showAnnualView, setShowAnnualView] = useState(false);
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState(isOnboarded);
   const [notificationsEnabled, setNotificationsEnabled] = useState(loadNotificationsEnabled);
+  const backupFileInputRef = useRef<HTMLInputElement>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+
+  useEffect(() => {
+    if (!supabase) return;
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+    });
+    return () => subscription.subscription.unsubscribe();
+  }, []);
+
+  function handleSignOut() {
+    supabase?.auth.signOut();
+  }
 
   useEffect(() => saveExpenses(expenses), [expenses]);
   useEffect(() => saveCategories(categories), [categories]);
@@ -263,6 +283,14 @@ export default function App() {
     setCategories((prev) => prev.filter((c) => c.id !== id));
   }
 
+  function handleRestoreDefaultCategories() {
+    setCategories((prev) => {
+      const existingIds = new Set(prev.map((c) => c.id));
+      const missing = DEFAULT_CATEGORIES.filter((c) => !existingIds.has(c.id));
+      return missing.length > 0 ? [...prev, ...missing] : prev;
+    });
+  }
+
   function handleAddSavingsGoal(goal: SavingsGoal) {
     setSavingsGoals((prev) => [...prev, goal]);
   }
@@ -295,6 +323,33 @@ export default function App() {
       await downloadWorkbook(`suivi-budget-${toISODate(new Date())}.xlsx`, workbook);
     } finally {
       setIsExporting(false);
+    }
+  }
+
+  async function handleExportBackup() {
+    const { buildBackup, downloadBackup } = await import('./lib/backup');
+    const backup = buildBackup(expenses, categories, savingsGoals, currency);
+    downloadBackup(`suivi-budget-sauvegarde-${toISODate(new Date())}.json`, backup);
+  }
+
+  async function handleImportBackupFile(file: File) {
+    try {
+      const { parseBackupFile } = await import('./lib/backup');
+      const backup = await parseBackupFile(file);
+      if (
+        !window.confirm(
+          `Restaurer cette sauvegarde du ${new Date(backup.exportedAt).toLocaleDateString('fr-FR')} ? Toutes les données actuelles (dépenses, catégories, objectifs) seront remplacées.`,
+        )
+      ) {
+        return;
+      }
+      setExpenses(backup.expenses);
+      setCategories(backup.categories);
+      setSavingsGoals(backup.savingsGoals ?? []);
+      if (backup.currency) setCurrency(backup.currency);
+      window.alert('Sauvegarde restaurée avec succès.');
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Échec de la restauration.');
     }
   }
 
@@ -427,6 +482,16 @@ export default function App() {
           <button type="button" className="btn" onClick={() => setShowAnnualView(true)}>
             📅 Vue annuelle
           </button>
+          {isSupabaseConfigured &&
+            (session ? (
+              <button type="button" className="btn" onClick={handleSignOut} title={session.user.email}>
+                👤 Se déconnecter
+              </button>
+            ) : (
+              <button type="button" className="btn" onClick={() => setShowAuthModal(true)}>
+                👤 Se connecter
+              </button>
+            ))}
           <details className="settings-menu">
             <summary className="btn settings-menu__trigger" aria-label="Paramètres">
               ⚙️
@@ -467,6 +532,34 @@ export default function App() {
                 <span>🔔 Rappels de dépenses prévues</span>
                 <span>{notificationsEnabled ? 'Activés' : 'Désactivés'}</span>
               </button>
+              <div className="settings-menu__divider" />
+              <button
+                type="button"
+                className="settings-menu__row settings-menu__row--button"
+                onClick={handleExportBackup}
+              >
+                <span>💾 Sauvegarder mes données</span>
+                <span>Fichier .json</span>
+              </button>
+              <button
+                type="button"
+                className="settings-menu__row settings-menu__row--button"
+                onClick={() => backupFileInputRef.current?.click()}
+              >
+                <span>📂 Restaurer une sauvegarde</span>
+                <span>Fichier .json</span>
+              </button>
+              <input
+                ref={backupFileInputRef}
+                type="file"
+                accept="application/json"
+                className="sr-only"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleImportBackupFile(file);
+                  e.target.value = '';
+                }}
+              />
             </div>
           </details>
         </div>
@@ -588,6 +681,7 @@ export default function App() {
           onRecolor={handleRecolorCategory}
           onSetBudget={handleSetCategoryBudget}
           onDelete={handleDeleteCategory}
+          onRestoreDefaults={handleRestoreDefaultCategories}
           onClose={() => setShowCategoryManager(false)}
         />
       )}
@@ -595,6 +689,8 @@ export default function App() {
       {showAnnualView && (
         <AnnualView expenses={expenses} currency={currency} onClose={() => setShowAnnualView(false)} />
       )}
+
+      {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
 
       {pendingDelete && (
         <RecurringDeleteDialog

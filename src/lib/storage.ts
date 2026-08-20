@@ -9,6 +9,7 @@ const SAVINGS_GOALS_KEY = 'budget-tracker:savings-goals';
 const ONBOARDED_KEY = 'budget-tracker:onboarded';
 const NOTIFICATIONS_ENABLED_KEY = 'budget-tracker:notifications-enabled';
 const LAST_NOTIFIED_KEY = 'budget-tracker:last-notified';
+const CATEGORIES_MIGRATED_KEY = 'budget-tracker:categories-migrated-v1';
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 
@@ -48,11 +49,17 @@ export function saveExpenses(expenses: Expense[]): void {
 export function loadCategories(): Category[] {
   try {
     const raw = localStorage.getItem(CATEGORIES_KEY);
-    if (!raw) return DEFAULT_CATEGORIES;
+    if (!raw) {
+      localStorage.setItem(CATEGORIES_MIGRATED_KEY, '1');
+      return DEFAULT_CATEGORIES;
+    }
     const parsed = JSON.parse(raw) as Category[];
     // Migration: categories saved before income tracking have no `kind`.
     const migrated = parsed.map((category) => ({ ...category, kind: category.kind ?? 'depense' }));
-    // Merge in default categories (e.g. income ones) missing from older saves.
+    // One-time merge of default categories (e.g. income ones) missing from older
+    // saves. Only runs once so a deliberate deletion afterward isn't undone on reload.
+    if (localStorage.getItem(CATEGORIES_MIGRATED_KEY) === '1') return migrated;
+    localStorage.setItem(CATEGORIES_MIGRATED_KEY, '1');
     const existingIds = new Set(migrated.map((c) => c.id));
     const missingDefaults = DEFAULT_CATEGORIES.filter((c) => !existingIds.has(c.id));
     return [...migrated, ...missingDefaults];

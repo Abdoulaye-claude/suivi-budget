@@ -81,3 +81,43 @@ button, input, select {
   font: inherit;
   color: inherit;
 }
+
+.error-boundary {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: var(--page);
+}
+
+.error-boundary__card {
+  max-width: 420px;
+  text-align: center;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 32px 28px;
+  box-shadow: var(--shadow-md);
+}
+
+.error-boundary__title {
+  font-size: 20px;
+  margin-bottom: 12px;
+}
+
+.error-boundary__text {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0 0 20px;
+}
+
+.error-boundary .btn {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: white;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 14px;
+  cursor: pointer;
+}

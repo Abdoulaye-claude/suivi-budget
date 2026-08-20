@@ -49,28 +49,17 @@ export function CategoryBudgets({ expenses, categories, currency, onSetBudget }:
         <p className="empty-state">Aucun budget défini pour le moment.</p>
       ) : (
         <ul className="budget-list">
-          {rows.map(({ cat, spent, budget, pct }) => {
-            const level = pct >= 100 ? 'over' : pct >= 80 ? 'warning' : 'ok';
-            return (
-              <li key={cat.id} className="budget-row">
-                <div className="budget-row__header">
-                  <span className="budget-row__icon" aria-hidden="true">
-                    {getCategoryIcon(cat.id)}
-                  </span>
-                  <span className="budget-row__name">{cat.name}</span>
-                  <span className="budget-row__amounts">
-                    {formatAmount(spent, currency)} / {formatAmount(budget, currency)}
-                  </span>
-                </div>
-                <div className="budget-row__track">
-                  <div
-                    className={`budget-row__fill budget-row__fill--${level}`}
-                    style={{ width: `${Math.min(pct, 100)}%` }}
-                  />
-                </div>
-              </li>
-            );
-          })}
+          {rows.map(({ cat, spent, budget, pct }) => (
+            <BudgetRow
+              key={cat.id}
+              category={cat}
+              spent={spent}
+              budget={budget}
+              pct={pct}
+              currency={currency}
+              onSetBudget={onSetBudget}
+            />
+          ))}
         </ul>
       )}
 
@@ -101,5 +90,75 @@ export function CategoryBudgets({ expenses, categories, currency, onSetBudget }:
         </form>
       )}
     </div>
+  );
+}
+
+interface BudgetRowProps {
+  category: Category;
+  spent: number;
+  budget: number;
+  pct: number;
+  currency: string;
+  onSetBudget: (id: string, budget: number | undefined) => void;
+}
+
+function BudgetRow({ category, spent, budget, pct, currency, onSetBudget }: BudgetRowProps) {
+  const [draft, setDraft] = useState(String(budget));
+
+  useEffect(() => {
+    setDraft(String(budget));
+  }, [budget]);
+
+  function commit() {
+    const raw = draft.trim().replace(',', '.');
+    const value = Number.parseFloat(raw);
+    if (raw === '' || !Number.isFinite(value) || value <= 0) {
+      onSetBudget(category.id, undefined);
+      return;
+    }
+    onSetBudget(category.id, value);
+  }
+
+  const level = pct >= 100 ? 'over' : pct >= 80 ? 'warning' : 'ok';
+
+  return (
+    <li className="budget-row">
+      <div className="budget-row__header">
+        <span className="budget-row__icon" aria-hidden="true">
+          {getCategoryIcon(category.id)}
+        </span>
+        <span className="budget-row__name">{category.name}</span>
+        <span className="budget-row__spent">{formatAmount(spent, currency)} /</span>
+        <input
+          type="number"
+          min={0}
+          step="1"
+          className="budget-row__input"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur();
+          }}
+          aria-label={`Modifier le plafond de ${category.name}`}
+          title="Modifier le plafond mensuel"
+        />
+        <button
+          type="button"
+          className="icon-btn icon-btn--danger"
+          onClick={() => onSetBudget(category.id, undefined)}
+          aria-label={`Supprimer le budget de ${category.name}`}
+          title="Supprimer ce budget"
+        >
+          ✕
+        </button>
+      </div>
+      <div className="budget-row__track">
+        <div
+          className={`budget-row__fill budget-row__fill--${level}`}
+          style={{ width: `${Math.min(pct, 100)}%` }}
+        />
+      </div>
+    </li>
   );
 }

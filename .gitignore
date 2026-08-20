@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
+mdp_supabase_suivi_budget.txt
 
 # Editor directories and files
 .vscode/*

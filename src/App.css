@@ -506,6 +506,11 @@
   flex: 1;
 }
 
+.settings-menu__divider {
+  border-top: 1px solid var(--gridline);
+  margin: 2px 0;
+}
+
 /* Expense list */
 .expense-list__title {
   font-size: 14px;
@@ -974,6 +979,12 @@
   margin: 16px 0 8px;
 }
 
+.category-manager__restore {
+  width: 100%;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
 .category-manager__section:first-of-type {
   margin-top: 0;
 }
@@ -1068,10 +1079,29 @@ form.category-manager__add {
   text-overflow: ellipsis;
 }
 
-.budget-row__amounts {
+.budget-row__spent {
   font-variant-numeric: tabular-nums;
   color: var(--text-muted);
   flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.budget-row__input {
+  width: 64px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  border-radius: 8px;
+  padding: 4px 6px;
+  font-size: 13px;
+  text-align: right;
+}
+
+.budget-row__header .icon-btn {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
 }
 
 .budget-row__track {
@@ -1290,4 +1320,42 @@ form.category-manager__add {
 
 .annual-view__amount--expense {
   color: var(--text-primary);
+}
+
+/* Auth modal */
+.auth-modal__note {
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--page);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+}
+
+.auth-modal__form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.auth-modal__form .field input {
+  width: 100%;
+}
+
+.auth-modal__switch {
+  display: block;
+  width: 100%;
+  text-align: center;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 13px;
+  cursor: pointer;
+  margin-top: 14px;
+  padding: 4px;
+}
+
+.auth-modal__switch:hover {
+  text-decoration: underline;
 }

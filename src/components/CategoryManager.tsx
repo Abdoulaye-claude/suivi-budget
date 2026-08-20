@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Category, ExpenseType } from '../types';
-import { CATEGORY_PALETTE } from '../data/defaultCategories';
+import { CATEGORY_PALETTE, DEFAULT_CATEGORIES } from '../data/defaultCategories';
 import { getCategoryIcon } from '../data/categoryIcons';
 
 interface Props {
@@ -11,6 +11,7 @@ interface Props {
   onRecolor: (id: string, color: string) => void;
   onSetBudget: (id: string, budget: number | undefined) => void;
   onDelete: (id: string) => void;
+  onRestoreDefaults: () => void;
   onClose: () => void;
 }
 
@@ -22,6 +23,7 @@ export function CategoryManager({
   onRecolor,
   onSetBudget,
   onDelete,
+  onRestoreDefaults,
   onClose,
 }: Props) {
   const [name, setName] = useState('');
@@ -30,6 +32,8 @@ export function CategoryManager({
 
   const depenseCategories = categories.filter((c) => c.kind === 'depense');
   const revenuCategories = categories.filter((c) => c.kind === 'revenu');
+  const existingIds = new Set(categories.map((c) => c.id));
+  const missingDefaultsCount = DEFAULT_CATEGORIES.filter((c) => !existingIds.has(c.id)).length;
 
   function handleAdd(event: React.FormEvent) {
     event.preventDefault();
@@ -102,6 +106,13 @@ export function CategoryManager({
             ✕
           </button>
         </div>
+
+        {missingDefaultsCount > 0 && (
+          <button type="button" className="btn category-manager__restore" onClick={onRestoreDefaults}>
+            ↩️ Restaurer {missingDefaultsCount} catégorie{missingDefaultsCount > 1 ? 's' : ''} par défaut manquante
+            {missingDefaultsCount > 1 ? 's' : ''}
+          </button>
+        )}
 
         <h4 className="category-manager__section">💸 Dépenses</h4>
         {renderCategoryList(depenseCategories)}
