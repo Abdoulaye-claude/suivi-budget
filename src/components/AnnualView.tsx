@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import type { Expense } from '../types';
 import { isInMonth, monthLabelFr } from '../lib/date';
 import { formatAmount } from '../lib/format';
+import { useModalDialog } from '../lib/useModalDialog';
 
 interface Props {
   expenses: Expense[];
@@ -11,6 +12,7 @@ interface Props {
 
 export function AnnualView({ expenses, currency, onClose }: Props) {
   const [year, setYear] = useState(() => new Date().getFullYear());
+  const modalRef = useModalDialog<HTMLDivElement>(onClose);
 
   const rows = useMemo(() => {
     return Array.from({ length: 12 }, (_, i) => {
@@ -42,9 +44,19 @@ export function AnnualView({ expenses, currency, onClose }: Props) {
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal modal--wide"
+        onClick={(e) => e.stopPropagation()}
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="annual-view-title"
+        tabIndex={-1}
+      >
         <div className="modal__header">
-          <h3 className="panel-title">📅 Vue annuelle</h3>
+          <h3 className="panel-title" id="annual-view-title">
+            📅 Vue annuelle
+          </h3>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Fermer">
             ✕
           </button>

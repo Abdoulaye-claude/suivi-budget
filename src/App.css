@@ -294,8 +294,15 @@
 }
 
 .segmented__option.is-active {
-  background: var(--accent);
+  background: var(--accent-solid);
   color: white;
+}
+
+.segmented__option:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .segmented--compact .segmented__option {
@@ -391,8 +398,8 @@
 }
 
 .btn--primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-solid);
+  border-color: var(--accent-solid);
   color: white;
   box-shadow: var(--shadow-sm);
 }
@@ -402,8 +409,8 @@
 }
 
 .btn--danger {
-  background: var(--danger);
-  border-color: var(--danger);
+  background: var(--danger-solid);
+  border-color: var(--danger-solid);
   color: white;
 }
 
@@ -595,7 +602,7 @@
 }
 
 .expense-row__amount--revenu {
-  color: #1baf7a;
+  color: var(--income);
 }
 
 .expense-row__actions {
@@ -755,10 +762,18 @@
   outline: none;
 }
 
+/* Focus already gets a visible treatment via the thicker stroke + updated
+   center label (same as :hover, driven from React state) — skip the generic
+   outline box a focus ring would otherwise draw around the circle's bounds. */
+.pie-chart__segment:focus-visible {
+  outline: none;
+}
+
 .pie-chart__slice-label {
   font-size: 13px;
   font-weight: 600;
-  fill: #ffffff;
+  /* fill is set inline per-segment (see labelInkFor in CategoryPieChart.tsx) so
+     the label ink always contrasts with that slice's own color. */
   pointer-events: none;
 }
 
@@ -1031,7 +1046,7 @@ form.category-manager__add {
 }
 
 .category-manager__budget {
-  width: 64px;
+  width: 76px;
   flex-shrink: 0;
   border: 1px solid var(--border);
   background: var(--surface-1);
@@ -1315,7 +1330,7 @@ form.category-manager__add {
 }
 
 .annual-view__amount--income {
-  color: #1baf7a;
+  color: var(--income);
 }
 
 .annual-view__amount--expense {

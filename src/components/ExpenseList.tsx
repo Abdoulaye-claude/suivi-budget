@@ -37,6 +37,7 @@ export function ExpenseList({
         <ul className="expense-list__items">
           {expenses.map((expense) => {
             const category = categoryById.get(expense.categoryId);
+            const label = expense.description || category?.name || 'Dépense';
             return (
               <li key={expense.id} className="expense-row">
                 <span
@@ -75,7 +76,7 @@ export function ExpenseList({
                     type="button"
                     className="icon-btn"
                     onClick={() => onDuplicate(expense)}
-                    aria-label="Dupliquer"
+                    aria-label={`Dupliquer « ${label} »`}
                     title="Dupliquer aujourd'hui"
                   >
                     ⧉
@@ -84,7 +85,7 @@ export function ExpenseList({
                     type="button"
                     className="icon-btn"
                     onClick={() => onEdit(expense)}
-                    aria-label="Modifier"
+                    aria-label={`Modifier « ${label} »`}
                   >
                     ✎
                   </button>
@@ -92,7 +93,7 @@ export function ExpenseList({
                     type="button"
                     className="icon-btn icon-btn--danger"
                     onClick={() => onDelete(expense)}
-                    aria-label="Supprimer"
+                    aria-label={`Supprimer « ${label} »`}
                   >
                     ✕
                   </button>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Category, ExpenseType } from '../types';
 import { CATEGORY_PALETTE, DEFAULT_CATEGORIES } from '../data/defaultCategories';
 import { getCategoryIcon } from '../data/categoryIcons';
+import { useModalDialog } from '../lib/useModalDialog';
 
 interface Props {
   categories: Category[];
@@ -29,6 +30,7 @@ export function CategoryManager({
   const [name, setName] = useState('');
   const [kind, setKind] = useState<ExpenseType>('depense');
   const [color, setColor] = useState(pickNextColor(categories));
+  const modalRef = useModalDialog<HTMLDivElement>(onClose);
 
   const depenseCategories = categories.filter((c) => c.kind === 'depense');
   const revenuCategories = categories.filter((c) => c.kind === 'revenu');
@@ -99,9 +101,19 @@ export function CategoryManager({
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal"
+        onClick={(e) => e.stopPropagation()}
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="category-manager-title"
+        tabIndex={-1}
+      >
         <div className="modal__header">
-          <h3 className="panel-title">Catégories</h3>
+          <h3 className="panel-title" id="category-manager-title">
+            Catégories
+          </h3>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Fermer">
             ✕
           </button>
@@ -121,7 +133,7 @@ export function CategoryManager({
         {renderCategoryList(revenuCategories)}
 
         <form className="category-manager__add" onSubmit={handleAdd}>
-          <div className="segmented segmented--compact" role="radiogroup" aria-label="Type de la nouvelle catégorie">
+          <div className="segmented segmented--compact" role="group" aria-label="Type de la nouvelle catégorie">
             <button
               type="button"
               className={kind === 'depense' ? 'segmented__option is-active' : 'segmented__option'}

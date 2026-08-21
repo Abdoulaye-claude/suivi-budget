@@ -66,13 +66,28 @@ export function SavingsGoals({ goals, currency, onAdd, onUpdateSaved, onDelete }
                     <span className="savings-goal__pct"> ({Math.round(pct)}%)</span>
                   </div>
                   <div className="savings-goal__stepper">
-                    <button type="button" className="icon-btn" onClick={() => adjust(goal, -10)} aria-label="Retirer 10">
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      onClick={() => adjust(goal, -10)}
+                      aria-label={`Retirer 10 de « ${goal.name} »`}
+                    >
                       −10
                     </button>
-                    <button type="button" className="icon-btn" onClick={() => adjust(goal, 10)} aria-label="Ajouter 10">
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      onClick={() => adjust(goal, 10)}
+                      aria-label={`Ajouter 10 à « ${goal.name} »`}
+                    >
                       +10
                     </button>
-                    <button type="button" className="icon-btn" onClick={() => adjust(goal, 50)} aria-label="Ajouter 50">
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      onClick={() => adjust(goal, 50)}
+                      aria-label={`Ajouter 50 à « ${goal.name} »`}
+                    >
                       +50
                     </button>
                   </div>

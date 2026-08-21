@@ -22,6 +22,28 @@ const GAP_PX = 3;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 const MIN_LABEL_PCT = 8;
 
+// The % labels sit directly on a slice's fill color, which varies per
+// category — a single fixed white label fails WCAG AA (4.5:1) against most of
+// the default palette (e.g. ~2.2:1 on the yellow). Pick whichever of white or
+// a near-black ink contrasts better against that specific slice color instead.
+const LABEL_DARK_INK = '#12110f';
+
+function relativeLuminance(hex: string): number {
+  const value = hex.replace('#', '');
+  const r = Number.parseInt(value.slice(0, 2), 16) / 255;
+  const g = Number.parseInt(value.slice(2, 4), 16) / 255;
+  const b = Number.parseInt(value.slice(4, 6), 16) / 255;
+  const [rs, gs, bs] = [r, g, b].map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
+}
+
+function labelInkFor(hex: string): string {
+  const l = relativeLuminance(hex);
+  const contrastWithWhite = 1.05 / (l + 0.05);
+  const contrastWithDark = (l + 0.05) / (relativeLuminance(LABEL_DARK_INK) + 0.05);
+  return contrastWithWhite >= contrastWithDark ? '#ffffff' : LABEL_DARK_INK;
+}
+
 export function CategoryPieChart({ data, currency }: Props) {
   const [hoverId, setHoverId] = useState<string | null>(null);
 
@@ -91,7 +113,15 @@ export function CategoryPieChart({ data, currency }: Props) {
               const lx = CENTER + labelRadius * Math.cos(midAngle);
               const ly = CENTER + labelRadius * Math.sin(midAngle);
               return (
-                <text key={s.id} x={lx} y={ly} textAnchor="middle" dominantBaseline="middle" className="pie-chart__slice-label">
+                <text
+                  key={s.id}
+                  x={lx}
+                  y={ly}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  className="pie-chart__slice-label"
+                  fill={labelInkFor(s.color)}
+                >
                   {Math.round(s.pct)}%
                 </text>
               );

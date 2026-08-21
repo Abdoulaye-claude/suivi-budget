@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { useModalDialog } from '../lib/useModalDialog';
 
 interface Props {
   onClose: () => void;
@@ -14,6 +15,7 @@ export function AuthModal({ onClose }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmationSent, setConfirmationSent] = useState(false);
+  const modalRef = useModalDialog<HTMLDivElement>(onClose);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -39,9 +41,19 @@ export function AuthModal({ onClose }: Props) {
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal modal--narrow" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal modal--narrow"
+        onClick={(e) => e.stopPropagation()}
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="auth-modal-title"
+        tabIndex={-1}
+      >
         <div className="modal__header">
-          <h3 className="panel-title">{mode === 'signin' ? 'Se connecter' : 'Créer un compte'}</h3>
+          <h3 className="panel-title" id="auth-modal-title">
+            {mode === 'signin' ? 'Se connecter' : 'Créer un compte'}
+          </h3>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Fermer">
             ✕
           </button>

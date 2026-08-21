@@ -69,6 +69,7 @@ export default function App() {
   const backupFileInputRef = useRef<HTMLInputElement>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const settingsMenuRef = useRef<HTMLDetailsElement>(null);
 
   useEffect(() => {
     if (!supabase) return;
@@ -112,6 +113,31 @@ export default function App() {
     });
     saveLastNotifiedDate(today);
   }, [notificationsEnabled, expenses, currency]);
+
+  useEffect(() => {
+    // <details>/<summary> only toggles on a click on the summary itself, so the
+    // settings dropdown otherwise stays open when clicking elsewhere on the page
+    // or pressing Escape — both expected ways to dismiss a menu like this.
+    function handlePointerDown(event: PointerEvent) {
+      const menu = settingsMenuRef.current;
+      if (menu?.open && !menu.contains(event.target as Node)) {
+        menu.open = false;
+      }
+    }
+    function handleSettingsEscape(event: KeyboardEvent) {
+      const menu = settingsMenuRef.current;
+      if (event.key === 'Escape' && menu?.open) {
+        menu.open = false;
+        menu.querySelector('summary')?.focus();
+      }
+    }
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleSettingsEscape);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleSettingsEscape);
+    };
+  }, []);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -492,7 +518,7 @@ export default function App() {
                 👤 Se connecter
               </button>
             ))}
-          <details className="settings-menu">
+          <details className="settings-menu" ref={settingsMenuRef}>
             <summary className="btn settings-menu__trigger" aria-label="Paramètres">
               ⚙️
             </summary>

@@ -1,3 +1,5 @@
+import { useModalDialog } from '../lib/useModalDialog';
+
 interface Props {
   onDeleteOne: () => void;
   onDeleteSeries: () => void;
@@ -5,10 +7,21 @@ interface Props {
 }
 
 export function RecurringDeleteDialog({ onDeleteOne, onDeleteSeries, onCancel }: Props) {
+  const modalRef = useModalDialog<HTMLDivElement>(onCancel);
   return (
     <div className="modal-backdrop" onClick={onCancel}>
-      <div className="modal modal--narrow" onClick={(e) => e.stopPropagation()}>
-        <h3 className="panel-title">🔁 Dépense récurrente</h3>
+      <div
+        className="modal modal--narrow"
+        onClick={(e) => e.stopPropagation()}
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="recurring-delete-title"
+        tabIndex={-1}
+      >
+        <h3 className="panel-title" id="recurring-delete-title">
+          🔁 Dépense récurrente
+        </h3>
         <p className="modal__text">
           Cette dépense fait partie d'une série récurrente. Que souhaitez-vous supprimer ?
         </p>

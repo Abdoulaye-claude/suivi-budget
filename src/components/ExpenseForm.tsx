@@ -144,7 +144,7 @@ export function ExpenseForm({
 
       <div className="field">
         <span>Type</span>
-        <div className="segmented" role="radiogroup" aria-label="Type de mouvement">
+        <div className="segmented" role="group" aria-label="Type de mouvement">
           <button
             type="button"
             className={type === 'depense' ? 'segmented__option is-active' : 'segmented__option'}
@@ -213,7 +213,7 @@ export function ExpenseForm({
 
       <div className="field">
         <span>Statut</span>
-        <div className="segmented" role="radiogroup" aria-label="Statut de la dépense">
+        <div className="segmented" role="group" aria-label="Statut de la dépense">
           <button
             type="button"
             className={status === 'reel' ? 'segmented__option is-active' : 'segmented__option'}

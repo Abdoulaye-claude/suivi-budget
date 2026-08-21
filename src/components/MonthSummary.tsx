@@ -92,7 +92,7 @@ export function MonthSummary({ expenses, categories, currency }: Props) {
       <div id="category-chart-capture">
         <div className="chart-header">
           <h3 className="panel-title">Répartition des dépenses par catégorie</h3>
-          <div className="segmented segmented--compact" role="radiogroup" aria-label="Vue du graphique">
+          <div className="segmented segmented--compact" role="group" aria-label="Vue du graphique">
             <button
               type="button"
               className={view === 'reel' ? 'segmented__option is-active' : 'segmented__option'}
