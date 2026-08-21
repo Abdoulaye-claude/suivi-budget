@@ -10,6 +10,7 @@ const ONBOARDED_KEY = 'budget-tracker:onboarded';
 const NOTIFICATIONS_ENABLED_KEY = 'budget-tracker:notifications-enabled';
 const LAST_NOTIFIED_KEY = 'budget-tracker:last-notified';
 const CATEGORIES_MIGRATED_KEY = 'budget-tracker:categories-migrated-v1';
+const SYNCED_ACCOUNT_ID_KEY = 'budget-tracker:synced-account-id';
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 
@@ -107,4 +108,12 @@ export function loadLastNotifiedDate(): string | null {
 
 export function saveLastNotifiedDate(date: string): void {
   localStorage.setItem(LAST_NOTIFIED_KEY, date);
+}
+
+export function loadSyncedAccountId(): string | null {
+  return localStorage.getItem(SYNCED_ACCOUNT_ID_KEY);
+}
+
+export function saveSyncedAccountId(id: string): void {
+  localStorage.setItem(SYNCED_ACCOUNT_ID_KEY, id);
 }

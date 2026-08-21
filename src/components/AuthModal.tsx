@@ -59,11 +59,6 @@ export function AuthModal({ onClose }: Props) {
           </button>
         </div>
 
-        <p className="auth-modal__note">
-          🚧 La connexion existe, mais la synchronisation de vos données entre appareils n'est pas
-          encore branchée — pour l'instant vos données restent uniquement en local.
-        </p>
-
         {confirmationSent ? (
           <p className="modal__text">
             📧 Un e-mail de confirmation a été envoyé à <strong>{email}</strong>. Cliquez sur le lien

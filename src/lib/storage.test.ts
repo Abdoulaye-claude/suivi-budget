@@ -6,12 +6,14 @@ import {
   loadExpenses,
   loadNotificationsEnabled,
   loadSavingsGoals,
+  loadSyncedAccountId,
   loadThemePreference,
   saveCategories,
   saveCurrency,
   saveExpenses,
   saveNotificationsEnabled,
   saveSavingsGoals,
+  saveSyncedAccountId,
   saveThemePreference,
 } from './storage';
 
@@ -138,5 +140,11 @@ describe('simple preference round-trips', () => {
     const goals = [{ id: 'g1', name: 'Vacances', targetAmount: 1000, savedAmount: 100 }];
     saveSavingsGoals(goals);
     expect(loadSavingsGoals()).toEqual(goals);
+  });
+
+  it('synced account id defaults to null and persists once set', () => {
+    expect(loadSyncedAccountId()).toBeNull();
+    saveSyncedAccountId('user-123');
+    expect(loadSyncedAccountId()).toBe('user-123');
   });
 });

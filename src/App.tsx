@@ -19,6 +19,20 @@ import {
   saveThemePreference,
   type ThemePreference,
 } from './lib/storage';
+import {
+  deleteCategory as cloudDeleteCategory,
+  deleteExpenses as cloudDeleteExpenses,
+  deleteSavingsGoal as cloudDeleteSavingsGoal,
+  pushLocalDataToCloud,
+  reconcileOnLogin,
+  subscribeToCloudChanges,
+  upsertCategories as cloudUpsertCategories,
+  upsertExpenses as cloudUpsertExpenses,
+  upsertSavingsGoals as cloudUpsertSavingsGoals,
+  upsertSettings as cloudUpsertSettings,
+  fetchAllCloudData,
+  type CloudTable,
+} from './lib/cloudSync';
 import { CURRENCIES } from './data/currencies';
 import { DEFAULT_CATEGORIES } from './data/defaultCategories';
 import { fetchExchangeRate } from './lib/exchangeRate';
@@ -83,6 +97,68 @@ export default function App() {
   function handleSignOut() {
     supabase?.auth.signOut();
   }
+
+  const userId = session?.user.id;
+
+  useEffect(() => {
+    if (!userId) return;
+    const uid = userId;
+
+    let cancelled = false;
+
+    reconcileOnLogin(uid, {
+      expenses,
+      categories,
+      savingsGoals,
+      currency,
+      theme,
+      notificationsEnabled,
+    })
+      .then((snapshot) => {
+        if (cancelled) return;
+        setExpenses(snapshot.expenses);
+        setCategories(snapshot.categories);
+        setSavingsGoals(snapshot.savingsGoals);
+        setCurrency(snapshot.currency);
+        setTheme(snapshot.theme);
+        setNotificationsEnabled(snapshot.notificationsEnabled);
+      })
+      .catch(console.error);
+
+    const debounceTimers: Partial<Record<CloudTable, ReturnType<typeof setTimeout>>> = {};
+
+    function onTableChanged(table: CloudTable) {
+      clearTimeout(debounceTimers[table]);
+      debounceTimers[table] = setTimeout(() => {
+        fetchAllCloudData(uid)
+          .then((fresh) => {
+            if (cancelled) return;
+            if (table === 'expenses') setExpenses(fresh.expenses);
+            if (table === 'categories') setCategories(fresh.categories);
+            if (table === 'savings_goals') setSavingsGoals(fresh.savingsGoals);
+            if (table === 'settings' && fresh.settings) {
+              setCurrency(fresh.settings.currency);
+              setTheme(fresh.settings.theme);
+              setNotificationsEnabled(fresh.settings.notificationsEnabled);
+            }
+          })
+          .catch(console.error);
+      }, 400);
+    }
+
+    const unsubscribe = subscribeToCloudChanges(uid, onTableChanged);
+
+    return () => {
+      cancelled = true;
+      for (const timer of Object.values(debounceTimers)) clearTimeout(timer);
+      unsubscribe();
+    };
+    // Deliberately keyed only on userId: this reconciles once per sign-in using
+    // whatever local state exists at that moment, then a realtime subscription
+    // takes over. Re-running on every local state change would re-reconcile and
+    // fight with the optimistic local writes made by the mutation handlers below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   useEffect(() => saveExpenses(expenses), [expenses]);
   useEffect(() => saveCategories(categories), [categories]);
@@ -241,22 +317,22 @@ export default function App() {
       return next;
     });
     setEditingExpense(null);
+    if (userId) void cloudUpsertExpenses(userId, newExpenses).catch(console.error);
   }
 
   function handleDuplicate(expense: Expense) {
     const date = todayISO();
-    setExpenses((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        date,
-        amount: expense.amount,
-        categoryId: expense.categoryId,
-        description: expense.description,
-        status: statusForDate(date),
-        type: expense.type,
-      },
-    ]);
+    const newExpense: Expense = {
+      id: crypto.randomUUID(),
+      date,
+      amount: expense.amount,
+      categoryId: expense.categoryId,
+      description: expense.description,
+      status: statusForDate(date),
+      type: expense.type,
+    };
+    setExpenses((prev) => [...prev, newExpense]);
+    if (userId) void cloudUpsertExpenses(userId, [newExpense]).catch(console.error);
   }
 
   function handleRequestDelete(expense: Expense) {
@@ -269,8 +345,10 @@ export default function App() {
   }
 
   function removeExpenses(keep: (expense: Expense) => boolean) {
+    const removedIds = expenses.filter((e) => !keep(e)).map((e) => e.id);
     setExpenses((prev) => prev.filter(keep));
     setEditingExpense((current) => (current && !keep(current) ? null : current));
+    if (userId && removedIds.length > 0) void cloudDeleteExpenses(userId, removedIds).catch(console.error);
   }
 
   function handleDeleteOne() {
@@ -288,18 +366,43 @@ export default function App() {
 
   function handleAddCategory(category: Category) {
     setCategories((prev) => [...prev, category]);
+    if (userId) void cloudUpsertCategories(userId, [category]).catch(console.error);
   }
 
   function handleRenameCategory(id: string, name: string) {
-    setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, name } : c)));
+    let updated: Category | undefined;
+    setCategories((prev) =>
+      prev.map((c) => {
+        if (c.id !== id) return c;
+        updated = { ...c, name };
+        return updated;
+      }),
+    );
+    if (userId && updated) void cloudUpsertCategories(userId, [updated]).catch(console.error);
   }
 
   function handleRecolorCategory(id: string, color: string) {
-    setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, color } : c)));
+    let updated: Category | undefined;
+    setCategories((prev) =>
+      prev.map((c) => {
+        if (c.id !== id) return c;
+        updated = { ...c, color };
+        return updated;
+      }),
+    );
+    if (userId && updated) void cloudUpsertCategories(userId, [updated]).catch(console.error);
   }
 
   function handleSetCategoryBudget(id: string, budget: number | undefined) {
-    setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, budget } : c)));
+    let updated: Category | undefined;
+    setCategories((prev) =>
+      prev.map((c) => {
+        if (c.id !== id) return c;
+        updated = { ...c, budget };
+        return updated;
+      }),
+    );
+    if (userId && updated) void cloudUpsertCategories(userId, [updated]).catch(console.error);
   }
 
   function handleDeleteCategory(id: string) {
@@ -307,26 +410,38 @@ export default function App() {
     const category = categories.find((c) => c.id === id);
     if (!window.confirm(`Supprimer la catégorie « ${category?.name ?? ''} » ?`)) return;
     setCategories((prev) => prev.filter((c) => c.id !== id));
+    if (userId) void cloudDeleteCategory(userId, id).catch(console.error);
   }
 
   function handleRestoreDefaultCategories() {
     setCategories((prev) => {
       const existingIds = new Set(prev.map((c) => c.id));
       const missing = DEFAULT_CATEGORIES.filter((c) => !existingIds.has(c.id));
+      if (missing.length > 0 && userId) void cloudUpsertCategories(userId, missing).catch(console.error);
       return missing.length > 0 ? [...prev, ...missing] : prev;
     });
   }
 
   function handleAddSavingsGoal(goal: SavingsGoal) {
     setSavingsGoals((prev) => [...prev, goal]);
+    if (userId) void cloudUpsertSavingsGoals(userId, [goal]).catch(console.error);
   }
 
   function handleUpdateSavingsGoalSaved(id: string, savedAmount: number) {
-    setSavingsGoals((prev) => prev.map((g) => (g.id === id ? { ...g, savedAmount } : g)));
+    let updated: SavingsGoal | undefined;
+    setSavingsGoals((prev) =>
+      prev.map((g) => {
+        if (g.id !== id) return g;
+        updated = { ...g, savedAmount };
+        return updated;
+      }),
+    );
+    if (userId && updated) void cloudUpsertSavingsGoals(userId, [updated]).catch(console.error);
   }
 
   function handleDeleteSavingsGoal(id: string) {
     setSavingsGoals((prev) => prev.filter((g) => g.id !== id));
+    if (userId) void cloudDeleteSavingsGoal(userId, id).catch(console.error);
   }
 
   async function handleExportExcel() {
@@ -373,6 +488,16 @@ export default function App() {
       setCategories(backup.categories);
       setSavingsGoals(backup.savingsGoals ?? []);
       if (backup.currency) setCurrency(backup.currency);
+      if (userId) {
+        void pushLocalDataToCloud(userId, {
+          expenses: backup.expenses,
+          categories: backup.categories,
+          savingsGoals: backup.savingsGoals ?? [],
+          currency: backup.currency ?? currency,
+          theme,
+          notificationsEnabled,
+        }).catch(console.error);
+      }
       window.alert('Sauvegarde restaurée avec succès.');
     } catch (error) {
       window.alert(error instanceof Error ? error.message : 'Échec de la restauration.');
@@ -384,16 +509,23 @@ export default function App() {
 
     if (expenses.length === 0) {
       setCurrency(nextCurrency);
+      if (userId) void cloudUpsertSettings(userId, { currency: nextCurrency }).catch(console.error);
       return;
     }
 
     setIsConvertingCurrency(true);
     try {
       const rate = await fetchExchangeRate(currency, nextCurrency);
-      setExpenses((prev) =>
-        prev.map((e) => ({ ...e, amount: Math.round(e.amount * rate * 100) / 100 })),
-      );
+      const convertedExpenses = expenses.map((e) => ({
+        ...e,
+        amount: Math.round(e.amount * rate * 100) / 100,
+      }));
+      setExpenses(convertedExpenses);
       setCurrency(nextCurrency);
+      if (userId) {
+        void cloudUpsertExpenses(userId, convertedExpenses).catch(console.error);
+        void cloudUpsertSettings(userId, { currency: nextCurrency }).catch(console.error);
+      }
     } catch {
       window.alert(
         "Impossible de récupérer le taux de change automatiquement (vérifiez votre connexion internet). La devise n'a pas été changée.",
@@ -476,13 +608,15 @@ export default function App() {
         return;
       }
     }
-    setNotificationsEnabled((v) => !v);
+    const next = !notificationsEnabled;
+    setNotificationsEnabled(next);
+    if (userId) void cloudUpsertSettings(userId, { notificationsEnabled: next }).catch(console.error);
   }
 
   function cycleTheme() {
-    setTheme((current) =>
-      current === 'system' ? 'light' : current === 'light' ? 'dark' : 'system',
-    );
+    const next = theme === 'system' ? 'light' : theme === 'light' ? 'dark' : 'system';
+    setTheme(next);
+    if (userId) void cloudUpsertSettings(userId, { theme: next }).catch(console.error);
   }
 
   const themeIcon = theme === 'system' ? '🖥️' : theme === 'light' ? '☀️' : '🌙';
@@ -726,9 +860,11 @@ export default function App() {
         />
       )}
 
-      <footer className="app__footer">
-        🔒 Vos données restent uniquement sur cet appareil — rien n'est envoyé à un serveur.
-      </footer>
+      {!session && (
+        <footer className="app__footer">
+          🔒 Vos données restent uniquement sur cet appareil — rien n'est envoyé à un serveur.
+        </footer>
+      )}
     </div>
   );
 }
